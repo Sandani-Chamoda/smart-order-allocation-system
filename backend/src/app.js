@@ -18,6 +18,7 @@ const {
 } = require("./middleware/authMiddleware");
 const productRoutes = require("./routes/productRoutes");
 const branchRoutes = require("./routes/branchRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 
 // Security headers
 app.use(helmet());
@@ -44,6 +45,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 
 app.use("/api/branches", branchRoutes);
+
+app.use("/api/orders", orderRoutes);
 
 app.get(
   "/api/admin/test",
