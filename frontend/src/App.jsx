@@ -10,6 +10,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CustomerDashboard from "./pages/CustomerDashboard";
+import MyOrders from "./pages/MyOrders";
 import AdminDashboard from "./pages/AdminDashboard";
 
 import { useAuth } from "./context/AuthContext";
@@ -18,7 +19,11 @@ const HomeRedirect = () => {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <div className="page-message">Loading...</div>;
+    return (
+      <div className="page-message">
+        Loading...
+      </div>
+    );
   }
 
   if (!user) {
@@ -27,7 +32,11 @@ const HomeRedirect = () => {
 
   return (
     <Navigate
-      to={user.role === "ADMIN" ? "/admin" : "/dashboard"}
+      to={
+        user.role === "ADMIN"
+          ? "/admin"
+          : "/dashboard"
+      }
       replace
     />
   );
@@ -39,16 +48,35 @@ function App() {
       <Navbar />
 
       <Routes>
-        <Route path="/" element={<HomeRedirect />} />
+        <Route
+          path="/"
+          element={<HomeRedirect />}
+        />
 
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route
+          path="/login"
+          element={<Login />}
+        />
+
+        <Route
+          path="/register"
+          element={<Register />}
+        />
 
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute allowedRole="CUSTOMER">
               <CustomerDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/orders"
+          element={
+            <ProtectedRoute allowedRole="CUSTOMER">
+              <MyOrders />
             </ProtectedRoute>
           }
         />
@@ -64,7 +92,9 @@ function App() {
 
         <Route
           path="*"
-          element={<Navigate to="/" replace />}
+          element={
+            <Navigate to="/" replace />
+          }
         />
       </Routes>
     </>
