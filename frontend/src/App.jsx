@@ -11,7 +11,11 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CustomerDashboard from "./pages/CustomerDashboard";
 import MyOrders from "./pages/MyOrders";
+
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminOrders from "./pages/AdminOrders";
+import AdminProducts from "./pages/AdminProducts";
+import AdminBranches from "./pages/AdminBranches";
 
 import { useAuth } from "./context/AuthContext";
 
@@ -91,10 +95,35 @@ function App() {
         />
 
         <Route
-          path="*"
+          path="/admin/orders"
           element={
-            <Navigate to="/" replace />
+            <ProtectedRoute allowedRole="ADMIN">
+              <AdminOrders />
+            </ProtectedRoute>
           }
+        />
+
+        <Route
+          path="/admin/products"
+          element={
+            <ProtectedRoute allowedRole="ADMIN">
+              <AdminProducts />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/branches"
+          element={
+            <ProtectedRoute allowedRole="ADMIN">
+              <AdminBranches />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="*"
+          element={<Navigate to="/" replace />}
         />
       </Routes>
     </>
