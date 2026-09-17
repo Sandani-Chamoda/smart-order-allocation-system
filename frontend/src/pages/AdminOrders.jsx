@@ -71,6 +71,7 @@ const AdminOrders = () => {
         order.customerId?.name,
         order.customerId?.email,
         order.assignedBranchId?.name,
+        order.messageCategory,
       ]
         .filter(Boolean)
         .join(" ")
@@ -105,6 +106,17 @@ const AdminOrders = () => {
       (order) => order.status === status
     ).length;
 
+  const formatConfidence = (confidence) => {
+    if (
+      confidence === null ||
+      confidence === undefined
+    ) {
+      return null;
+    }
+
+    return `${(confidence * 100).toFixed(1)}%`;
+  };
+
   if (loading) {
     return (
       <div className="page-message">
@@ -122,8 +134,8 @@ const AdminOrders = () => {
           <h1>Orders</h1>
 
           <p>
-            Review allocations and manage the customer
-            order lifecycle.
+            Review allocations, AI message insights and
+            manage the customer order lifecycle.
           </p>
         </div>
 
@@ -235,7 +247,7 @@ const AdminOrders = () => {
             onChange={(event) =>
               setSearch(event.target.value)
             }
-            placeholder="Search order, customer, email or branch..."
+            placeholder="Search order, customer, email, branch or AI category..."
           />
         </div>
 
@@ -367,6 +379,105 @@ const AdminOrders = () => {
                   {order.status}
                 </span>
               </div>
+
+              {order.customerMessage && (
+                <div
+                  style={{
+                    marginTop: "14px",
+                    padding: "14px 16px",
+                    borderRadius: "10px",
+                    background: "#f8fafc",
+                    border: "1px solid #e5e7eb",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "16px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          color: "#64748b",
+                          marginBottom: "5px",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        CUSTOMER NOTE
+                      </span>
+
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: "14px",
+                          color: "#334155",
+                        }}
+                      >
+                        {order.customerMessage}
+                      </p>
+                    </div>
+
+                    {order.messageCategory && (
+                      <div
+                        style={{
+                          minWidth: "190px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            color: "#64748b",
+                            marginBottom: "5px",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          AI CLASSIFICATION
+                        </span>
+
+                        <strong
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            color: "#0f172a",
+                          }}
+                        >
+                          {order.messageCategory}
+                        </strong>
+
+                        {formatConfidence(
+                          order.messageConfidence
+                        ) && (
+                          <small
+                            style={{
+                              display: "block",
+                              marginTop: "3px",
+                              color: order.messageLowConfidence
+                                ? "#b45309"
+                                : "#64748b",
+                            }}
+                          >
+                            Confidence:{" "}
+                            {formatConfidence(
+                              order.messageConfidence
+                            )}
+                            {order.messageLowConfidence
+                              ? " · Low confidence"
+                              : ""}
+                          </small>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="admin-order-footer">
                 <div className="allocation-mini">

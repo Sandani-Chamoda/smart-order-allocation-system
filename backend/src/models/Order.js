@@ -93,24 +93,35 @@ const orderSchema = new mongoose.Schema(
       default: "PENDING",
     },
 
+    // AI-generated classification of the customer's message.
     messageCategory: {
       type: String,
       enum: [
         "Payment Issue",
         "Delivery Issue",
         "Refund/Cancellation",
-        "Product Inquiry",
+        "Product/Stock Inquiry",
+        "Order Status Inquiry",
+        "Account/Login Issue",
+        "Promotion/Discount Inquiry",
         "General Inquiry",
-        "Needs Manual Review",
       ],
       default: undefined,
     },
 
+    // Probability returned by the classifier (0 to 1).
     messageConfidence: {
       type: Number,
       min: 0,
       max: 1,
       default: null,
+    },
+
+    // Indicates predictions that fell below the
+    // classifier confidence threshold.
+    messageLowConfidence: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -118,4 +129,7 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Order", orderSchema);
+module.exports = mongoose.model(
+  "Order",
+  orderSchema
+);

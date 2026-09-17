@@ -3,19 +3,29 @@ const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Branch = require("../models/Branch");
 const Order = require("../models/Order");
+
 const allocateBranch = require("../services/allocationService");
+const classifyMessage = require(
+  "../services/messageClassifierService"
+);
 
 // POST /api/orders
 const createOrder = async (req, res, next) => {
   try {
-    const { items, customerLocation, customerMessage } = req.body;
+    const {
+      items,
+      customerLocation,
+      customerMessage,
+    } = req.body;
 
     // --------------------------------------------------
     // 1. Validate order items
     // --------------------------------------------------
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400);
-      throw new Error("At least one order item is required");
+      throw new Error(
+        "At least one order item is required"
+      );
     }
 
     // --------------------------------------------------
@@ -27,11 +37,18 @@ const createOrder = async (req, res, next) => {
       customerLocation.longitude === undefined
     ) {
       res.status(400);
-      throw new Error("Customer location is required");
+      throw new Error(
+        "Customer location is required"
+      );
     }
 
-    const latitude = Number(customerLocation.latitude);
-    const longitude = Number(customerLocation.longitude);
+    const latitude = Number(
+      customerLocation.latitude
+    );
+
+    const longitude = Number(
+      customerLocation.longitude
+    );
 
     if (
       !Number.isFinite(latitude) ||
@@ -68,10 +85,14 @@ const createOrder = async (req, res, next) => {
     for (const item of items) {
       if (
         !item.productId ||
-        !mongoose.Types.ObjectId.isValid(item.productId)
+        !mongoose.Types.ObjectId.isValid(
+          item.productId
+        )
       ) {
         res.status(400);
-        throw new Error("Invalid product ID");
+        throw new Error(
+          "Invalid product ID"
+        );
       }
 
       const quantity = Number(item.quantity);
@@ -86,15 +107,20 @@ const createOrder = async (req, res, next) => {
         );
       }
 
-      const productId = item.productId.toString();
+      const productId =
+        item.productId.toString();
 
       if (combinedItems.has(productId)) {
         combinedItems.set(
           productId,
-          combinedItems.get(productId) + quantity
+          combinedItems.get(productId) +
+            quantity
         );
       } else {
-        combinedItems.set(productId, quantity);
+        combinedItems.set(
+          productId,
+          quantity
+        );
       }
     }
 
@@ -103,8 +129,12 @@ const createOrder = async (req, res, next) => {
     // --------------------------------------------------
     const preparedItems = [];
 
-    for (const [productId, quantity] of combinedItems) {
-      const product = await Product.findById(productId);
+    for (
+      const [productId, quantity]
+      of combinedItems
+    ) {
+      const product =
+        await Product.findById(productId);
 
       if (!product || !product.isActive) {
         res.status(404);
@@ -123,10 +153,11 @@ const createOrder = async (req, res, next) => {
     // --------------------------------------------------
     // 5. Smart branch allocation
     // --------------------------------------------------
-    const allocation = await allocateBranch(
-      preparedItems,
-      validatedLocation
-    );
+    const allocation =
+      await allocateBranch(
+        preparedItems,
+        validatedLocation
+      );
 
     if (!allocation) {
       res.status(409);
@@ -135,11 +166,15 @@ const createOrder = async (req, res, next) => {
       );
     }
 
-    const selectedBranch = await Branch.findById(
-      allocation.branch._id
-    );
+    const selectedBranch =
+      await Branch.findById(
+        allocation.branch._id
+      );
 
-    if (!selectedBranch || !selectedBranch.isActive) {
+    if (
+      !selectedBranch ||
+      !selectedBranch.isActive
+    ) {
       res.status(409);
       throw new Error(
         "Selected branch is no longer available"
@@ -147,18 +182,20 @@ const createOrder = async (req, res, next) => {
     }
 
     // --------------------------------------------------
-    // 6. Re-check stock before changing quantities
+    // 6. Re-check stock
     // --------------------------------------------------
     for (const item of preparedItems) {
-      const stockItem = selectedBranch.stock.find(
-        (stock) =>
-          stock.productId.toString() ===
-          item.productId.toString()
-      );
+      const stockItem =
+        selectedBranch.stock.find(
+          (stock) =>
+            stock.productId.toString() ===
+            item.productId.toString()
+        );
 
       if (
         !stockItem ||
-        stockItem.quantity < item.quantity
+        stockItem.quantity <
+          item.quantity
       ) {
         res.status(409);
         throw new Error(
@@ -168,16 +205,28 @@ const createOrder = async (req, res, next) => {
     }
 
     // --------------------------------------------------
-    // 7. Reserve/decrease stock
+    // 7. Classify customer message using AI
     // --------------------------------------------------
-    for (const item of preparedItems) {
-      const stockItem = selectedBranch.stock.find(
-        (stock) =>
-          stock.productId.toString() ===
-          item.productId.toString()
+    // AI is optional. If classification fails,
+    // the order can still be created.
+    const aiResult =
+      await classifyMessage(
+        customerMessage
       );
 
-      stockItem.quantity -= item.quantity;
+    // --------------------------------------------------
+    // 8. Reserve/decrease stock
+    // --------------------------------------------------
+    for (const item of preparedItems) {
+      const stockItem =
+        selectedBranch.stock.find(
+          (stock) =>
+            stock.productId.toString() ===
+            item.productId.toString()
+        );
+
+      stockItem.quantity -=
+        item.quantity;
     }
 
     selectedBranch.currentWorkload += 1;
@@ -185,33 +234,55 @@ const createOrder = async (req, res, next) => {
     await selectedBranch.save();
 
     // --------------------------------------------------
-    // 8. Create order
+    // 9. Create order
     // --------------------------------------------------
     const order = await Order.create({
       customerId: req.user._id,
+
       items: preparedItems,
-      customerLocation: validatedLocation,
+
+      customerLocation:
+        validatedLocation,
+
       customerMessage:
         typeof customerMessage === "string"
           ? customerMessage.trim()
           : "",
-      assignedBranchId: selectedBranch._id,
+
+      messageCategory:
+        aiResult?.category,
+
+      messageConfidence:
+        aiResult?.confidence ?? null,
+
+      messageLowConfidence:
+        aiResult?.lowConfidence ?? false,
+
+      assignedBranchId:
+        selectedBranch._id,
+
       allocationScore: Number(
         allocation.score.toFixed(4)
       ),
+
       allocationReason:
         `Selected based on stock availability, distance ` +
         `(${allocation.distance.toFixed(2)} km), workload ` +
         `(${allocation.workload}), and remaining stock suitability.`,
+
       status: "ALLOCATED",
     });
 
-    const populatedOrder = await Order.findById(order._id)
-      .populate("items.productId", "name sku")
-      .populate(
-        "assignedBranchId",
-        "name location"
-      );
+    const populatedOrder =
+      await Order.findById(order._id)
+        .populate(
+          "items.productId",
+          "name sku"
+        )
+        .populate(
+          "assignedBranchId",
+          "name location"
+        );
 
     res.status(201).json({
       success: true,
@@ -225,17 +296,26 @@ const createOrder = async (req, res, next) => {
 };
 
 // GET /api/orders/my
-const getMyOrders = async (req, res, next) => {
+const getMyOrders = async (
+  req,
+  res,
+  next
+) => {
   try {
     const orders = await Order.find({
       customerId: req.user._id,
     })
-      .populate("items.productId", "name sku")
+      .populate(
+        "items.productId",
+        "name sku"
+      )
       .populate(
         "assignedBranchId",
         "name location"
       )
-      .sort({ createdAt: -1 });
+      .sort({
+        createdAt: -1,
+      });
 
     res.status(200).json({
       success: true,
@@ -248,7 +328,11 @@ const getMyOrders = async (req, res, next) => {
 };
 
 // GET /api/orders - ADMIN
-const getAllOrders = async (req, res, next) => {
+const getAllOrders = async (
+  req,
+  res,
+  next
+) => {
   try {
     const filter = {};
 
@@ -261,11 +345,16 @@ const getAllOrders = async (req, res, next) => {
         "CANCELLED",
       ];
 
-      const status = req.query.status.toUpperCase();
+      const status =
+        req.query.status.toUpperCase();
 
-      if (!validStatuses.includes(status)) {
+      if (
+        !validStatuses.includes(status)
+      ) {
         res.status(400);
-        throw new Error("Invalid order status");
+        throw new Error(
+          "Invalid order status"
+        );
       }
 
       filter.status = status;
@@ -278,20 +367,32 @@ const getAllOrders = async (req, res, next) => {
         )
       ) {
         res.status(400);
-        throw new Error("Invalid branch ID");
+        throw new Error(
+          "Invalid branch ID"
+        );
       }
 
-      filter.assignedBranchId = req.query.branchId;
+      filter.assignedBranchId =
+        req.query.branchId;
     }
 
-    const orders = await Order.find(filter)
-      .populate("customerId", "name email")
-      .populate("items.productId", "name sku")
-      .populate(
-        "assignedBranchId",
-        "name location"
-      )
-      .sort({ createdAt: -1 });
+    const orders =
+      await Order.find(filter)
+        .populate(
+          "customerId",
+          "name email"
+        )
+        .populate(
+          "items.productId",
+          "name sku"
+        )
+        .populate(
+          "assignedBranchId",
+          "name location"
+        )
+        .sort({
+          createdAt: -1,
+        });
 
     res.status(200).json({
       success: true,
@@ -304,29 +405,41 @@ const getAllOrders = async (req, res, next) => {
 };
 
 // PATCH /api/orders/:id/cancel
-const cancelOrder = async (req, res, next) => {
+const cancelOrder = async (
+  req,
+  res,
+  next
+) => {
   try {
     if (
-      !mongoose.Types.ObjectId.isValid(req.params.id)
+      !mongoose.Types.ObjectId.isValid(
+        req.params.id
+      )
     ) {
       res.status(400);
-      throw new Error("Invalid order ID");
+      throw new Error(
+        "Invalid order ID"
+      );
     }
 
-    const order = await Order.findOne({
-      _id: req.params.id,
-      customerId: req.user._id,
-    });
+    const order =
+      await Order.findOne({
+        _id: req.params.id,
+        customerId: req.user._id,
+      });
 
     if (!order) {
       res.status(404);
-      throw new Error("Order not found");
+      throw new Error(
+        "Order not found"
+      );
     }
 
     if (
-      !["PENDING", "ALLOCATED"].includes(
-        order.status
-      )
+      ![
+        "PENDING",
+        "ALLOCATED",
+      ].includes(order.status)
     ) {
       res.status(400);
       throw new Error(
@@ -335,38 +448,46 @@ const cancelOrder = async (req, res, next) => {
     }
 
     if (order.assignedBranchId) {
-      const branch = await Branch.findById(
-        order.assignedBranchId
-      );
+      const branch =
+        await Branch.findById(
+          order.assignedBranchId
+        );
 
       if (branch) {
-        for (const item of order.items) {
-          const stockItem = branch.stock.find(
-            (stock) =>
-              stock.productId.toString() ===
-              item.productId.toString()
-          );
+        for (
+          const item of order.items
+        ) {
+          const stockItem =
+            branch.stock.find(
+              (stock) =>
+                stock.productId.toString() ===
+                item.productId.toString()
+            );
 
           if (stockItem) {
-            stockItem.quantity += item.quantity;
+            stockItem.quantity +=
+              item.quantity;
           }
         }
 
-        branch.currentWorkload = Math.max(
-          0,
-          branch.currentWorkload - 1
-        );
+        branch.currentWorkload =
+          Math.max(
+            0,
+            branch.currentWorkload - 1
+          );
 
         await branch.save();
       }
     }
 
     order.status = "CANCELLED";
+
     await order.save();
 
     res.status(200).json({
       success: true,
-      message: "Order cancelled successfully",
+      message:
+        "Order cancelled successfully",
       order,
     });
   } catch (error) {
@@ -382,10 +503,14 @@ const updateOrderStatus = async (
 ) => {
   try {
     if (
-      !mongoose.Types.ObjectId.isValid(req.params.id)
+      !mongoose.Types.ObjectId.isValid(
+        req.params.id
+      )
     ) {
       res.status(400);
-      throw new Error("Invalid order ID");
+      throw new Error(
+        "Invalid order ID"
+      );
     }
 
     const status =
@@ -395,54 +520,71 @@ const updateOrderStatus = async (
 
     if (!status) {
       res.status(400);
-      throw new Error("Order status is required");
+      throw new Error(
+        "Order status is required"
+      );
     }
 
-    const order = await Order.findById(
-      req.params.id
-    );
+    const order =
+      await Order.findById(
+        req.params.id
+      );
 
     if (!order) {
       res.status(404);
-      throw new Error("Order not found");
+      throw new Error(
+        "Order not found"
+      );
     }
 
     const allowedTransitions = {
-      ALLOCATED: ["PROCESSING", "COMPLETED"],
-      PROCESSING: ["COMPLETED"],
+      ALLOCATED: [
+        "PROCESSING",
+        "COMPLETED",
+      ],
+      PROCESSING: [
+        "COMPLETED",
+      ],
     };
 
     const nextStatuses =
-      allowedTransitions[order.status] || [];
+      allowedTransitions[
+        order.status
+      ] || [];
 
-    if (!nextStatuses.includes(status)) {
+    if (
+      !nextStatuses.includes(status)
+    ) {
       res.status(400);
       throw new Error(
         `Cannot change order from ${order.status} to ${status}`
       );
     }
 
-    // Completed orders no longer count toward
-    // the branch's active workload.
+    // Completed orders no longer count
+    // toward branch workload.
     if (
       status === "COMPLETED" &&
       order.assignedBranchId
     ) {
-      const branch = await Branch.findById(
-        order.assignedBranchId
-      );
+      const branch =
+        await Branch.findById(
+          order.assignedBranchId
+        );
 
       if (branch) {
-        branch.currentWorkload = Math.max(
-          0,
-          branch.currentWorkload - 1
-        );
+        branch.currentWorkload =
+          Math.max(
+            0,
+            branch.currentWorkload - 1
+          );
 
         await branch.save();
       }
     }
 
     order.status = status;
+
     await order.save();
 
     res.status(200).json({
