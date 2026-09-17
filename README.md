@@ -1,46 +1,16 @@
 # Smart Order Allocation System
 
-A full-stack order management application developed as part of the DartCodes Software Engineer Intern Technical Assessment.
+A full-stack application developed for the **DartCodes Software Engineer Intern Technical Assessment**.
 
-The system allows customers to create orders and automatically assigns each order to a suitable branch based on stock availability, geographic distance, current branch workload, and remaining stock suitability.
+The system allows customers to place orders and automatically allocates each order to a suitable branch based on **stock availability, distance, branch workload, and remaining stock**.
 
-The application also includes secure authentication, role-based access control, inventory management, order lifecycle management, and an optional AI-powered customer message classifier.
-
----
-
-## Features
-
-### Customer
-
-- Customer registration and login
-- Browse available products
-- Select product and quantity
-- Select delivery location
-- Add an optional customer note
-- Automatic branch allocation
-- View allocation details
-- View order history
-- Cancel eligible orders
-- Responsive customer interface
-
-### Administrator
-
-- Admin dashboard
-- View and search orders
-- Filter orders by status
-- Manage order lifecycle
-- View branches and workloads
-- Manage branch stock
-- Add and view products
-- View allocation reasoning
-- View AI customer-message classifications and confidence scores
+It also includes customer/admin authentication, inventory management, order lifecycle management, validation, security controls, and an optional AI-powered customer message classifier.
 
 ---
 
-## Technology Stack
+## Technologies Used
 
 ### Frontend
-
 - React
 - Vite
 - React Router
@@ -48,18 +18,16 @@ The application also includes secure authentication, role-based access control, 
 - CSS
 
 ### Backend
-
 - Node.js
 - Express.js
 - MongoDB
 - Mongoose
-- JSON Web Token (JWT)
+- JWT
 - bcrypt
 - Helmet
 - Express Rate Limit
 
-### AI / Machine Learning
-
+### AI / ML
 - Python
 - pandas
 - scikit-learn
@@ -69,9 +37,35 @@ The application also includes secure authentication, role-based access control, 
 
 ---
 
+## Main Features
+
+### Customer
+- Register and login
+- Browse products
+- Select products and quantities
+- Select delivery location
+- Add an optional order note
+- Automatic branch allocation
+- View allocation information
+- Track order status/history
+- Cancel eligible orders
+
+### Administrator
+- Admin dashboard
+- View and search orders
+- Filter orders by status
+- Manage order lifecycle
+- View branches and workloads
+- Manage branch stock
+- Manage products
+- View allocation reasoning
+- View AI message category, confidence, and low-confidence status
+
+---
+
 ## System Architecture
 
-The application follows a simple client-server architecture.
+The application uses a client-server architecture.
 
 ```text
 React Frontend
@@ -80,9 +74,9 @@ React Frontend
       v
 Node.js / Express Backend
       |
-      +----------------------+
-      |                      |
-      v                      v
+      +-----------------------+
+      |                       |
+      v                       v
 MongoDB Atlas          Python ML Classifier
                               |
                               v
@@ -90,49 +84,51 @@ MongoDB Atlas          Python ML Classifier
                          Regression
 ```
 
-The React frontend communicates with the Express backend using REST APIs.
+The **React frontend** communicates with the **Express REST API**.
 
-The backend handles authentication, authorization, validation, business logic, smart order allocation, inventory updates, and database access.
+The backend is responsible for authentication, authorization, validation, order management, inventory management, and smart branch allocation.
 
-MongoDB is used for persistent storage.
+**MongoDB Atlas** provides persistent data storage.
 
-The Python classifier is invoked by the backend when an order contains a customer message. AI failure does not prevent normal order creation.
+When an order contains a customer note, the backend can also pass that message to the Python classifier and store the resulting category and confidence with the order.
+
+AI classification is treated as an optional enhancement, so an AI failure does not prevent the customer from creating an order.
 
 ---
 
-## Smart Branch Allocation
+## Branch Allocation Logic
 
-An order is assigned only to a branch that can fulfill the **entire order**.
+The goal of the allocation algorithm is to select a branch that can fulfill the complete order while balancing customer proximity, current workload, and inventory.
 
-The current prototype does not split a single order between multiple branches.
+### Step 1 - Find Eligible Branches
 
-### 1. Eligibility
+Only active branches are considered.
 
-The system first checks active branches.
+A branch is eligible only when it has enough stock to fulfill **every product and quantity in the order**.
 
-A branch is eligible only when it has enough stock for every item and requested quantity in the order.
+The system does not split one order between multiple branches.
 
-If no branch can fulfill the complete order, the API returns a conflict response instead of creating a partially fulfillable order.
+If no branch can fulfill the complete order, the order is rejected with an appropriate error rather than being partially allocated.
 
-### 2. Distance
+### Step 2 - Calculate Distance
 
-The Haversine formula is used to calculate the approximate geographic distance between the customer location and each eligible branch.
+The **Haversine formula** calculates the approximate geographic distance between the customer's selected location and each eligible branch.
 
-### 3. Workload
+### Step 3 - Consider Workload
 
-Each branch maintains a current workload value.
+Each branch has a current workload value.
 
-Branches with higher active workloads receive a larger workload component in their allocation score.
+A branch with a higher active workload receives a larger workload penalty.
 
-### 4. Remaining Stock Suitability
+### Step 4 - Consider Remaining Stock
 
-The algorithm also considers how much relevant stock would remain after fulfilling the order.
+The algorithm also considers the relevant stock remaining after the order is fulfilled.
 
-This provides an additional tie-breaking factor when several branches are suitable.
+This helps distinguish between multiple otherwise suitable branches.
 
 ### Allocation Score
 
-The factors are normalized before being combined.
+The factors are normalized and combined using:
 
 ```text
 Allocation Score =
@@ -141,116 +137,139 @@ Allocation Score =
   + (0.20 × stock penalty)
 ```
 
-The branch with the **lowest score** is selected.
+The eligible branch with the **lowest score** is selected.
 
-The weighting gives the highest priority to customer proximity while still considering operational workload and inventory suitability.
+### Why This Approach?
 
-A deterministic branch identifier comparison is used when scores are equal.
+Distance receives the highest weight because assigning an order to a nearby branch can generally improve fulfillment efficiency.
+
+Workload is also considered so that one branch is not unnecessarily overloaded when alternatives are available.
+
+Remaining stock is given a smaller weight to help preserve healthier inventory distribution.
+
+This provides a simple and explainable multi-factor allocation strategy instead of selecting a branch using only one factor.
+
+If two calculated scores are equal, a deterministic branch identifier comparison is used to provide consistent selection.
 
 ---
 
-## Order and Inventory Lifecycle
+## Order Lifecycle
 
-When an order is successfully allocated:
-
-1. The selected branch stock is reduced/reserved.
-2. The branch workload is increased.
-3. The order is stored with status `ALLOCATED`.
-
-Supported lifecycle:
+A successfully allocated order follows:
 
 ```text
-ALLOCATED
-    |
-    v
-PROCESSING
-    |
-    v
-COMPLETED
+ALLOCATED → PROCESSING → COMPLETED
 ```
 
-Eligible orders can also move to:
+Eligible orders can also become:
 
 ```text
 CANCELLED
 ```
 
-When an allocated order is cancelled, its reserved stock is restored and the branch workload is reduced.
+When an order is allocated:
 
-When an order is completed, the workload is reduced while the stock remains consumed.
+- Required stock is deducted/reserved from the selected branch.
+- The selected branch workload is increased.
+- The order is saved with the assigned branch and allocation information.
+
+When an eligible allocated order is cancelled:
+
+- Reserved stock is restored.
+- Branch workload is reduced.
+
+When an order is completed:
+
+- Branch workload is reduced.
+- Stock remains consumed because the order was fulfilled.
 
 ---
 
 ## Authentication and Security
 
-The application implements backend-enforced authentication and authorization.
+The application uses **JWT-based authentication** and backend-enforced **role-based access control**.
 
-### Authentication
-
-- Passwords are hashed using bcrypt.
-- JWT is used for authenticated sessions.
-- Tokens have an expiration time.
-- Protected APIs verify the token before allowing access.
-
-### Role-Based Access Control
-
-Two roles are supported:
+Two roles are available:
 
 ```text
 CUSTOMER
 ADMIN
 ```
 
+### Customer Registration
+
 Public registration always creates a `CUSTOMER`.
 
-A user cannot become an administrator by modifying the frontend request or directly sending an `ADMIN` role through the registration API.
+The backend does not trust a role supplied by the frontend. Therefore, a user cannot obtain administrator privileges simply by changing frontend data or manually calling the registration API.
 
-Admin routes are protected by backend role authorization middleware.
+### Administrator Account
 
-### Additional Security
+Administrator accounts are **not created through public registration**.
 
-- Password hashing
-- JWT expiration
-- Protected API routes
-- Backend role validation
-- Request/input validation
+The initial administrator is created using the backend's admin seeding mechanism. Admin email and password values are supplied through environment variables.
+
+Example:
+
+```env
+ADMIN_EMAIL=your_admin_email
+ADMIN_PASSWORD=your_secure_admin_password
+```
+
+Actual administrator credentials and other secrets are intentionally **not stored in the GitHub repository**.
+
+### Security Measures
+
+The application includes:
+
+- bcrypt password hashing
+- JWT authentication
+- Token expiration
+- Protected backend APIs
+- Role-based authorization
+- Backend input validation
 - Authentication rate limiting
 - Helmet security headers
-- Environment variables for secrets
+- Environment variables for sensitive configuration
 - Generic invalid-login responses
 - Server-side product price lookup
 
-Sensitive configuration is stored in `.env` and is excluded from Git.
+Passwords, database connection strings, JWT secrets, and administrator credentials are stored in `.env` and excluded from Git.
 
 ---
 
 ## Validation and Edge Cases
 
-The backend handles several invalid or unusual cases, including:
+The backend handles cases including:
 
 - Empty orders
 - Invalid product IDs
-- Inactive or unavailable products
+- Inactive products
 - Zero or negative quantities
 - Non-integer quantities
 - Duplicate product entries
-- Invalid latitude or longitude
+- Invalid customer coordinates
 - Insufficient branch stock
+- No eligible branch
 - Invalid order IDs
-- Invalid branch filters
-- Invalid order status transitions
-- Unauthorized API access
+- Invalid order statuses
+- Unauthorized access
 - Customer attempts to access admin APIs
 
-Duplicate product entries are combined before allocation so they cannot be used to bypass stock validation.
+Duplicate product entries are combined before stock validation to prevent stock checks from being bypassed.
 
-Stock is also rechecked before being decreased.
+Product prices are retrieved from the database instead of trusting prices supplied by the client.
+
+Stock is also rechecked before it is decreased.
 
 ---
 
-## AI Customer Message Classification
+## AI / ML Approach
 
-The optional AI/ML feature classifies customer messages into eight categories:
+As an additional feature, customer order notes can be automatically classified using a machine-learning model.
+
+### Categories
+
+The supplied dataset contains eight categories:
 
 - Payment Issue
 - Delivery Issue
@@ -278,78 +297,46 @@ Logistic Regression
 Category + Confidence
 ```
 
-TF-IDF with Logistic Regression was selected because the supplied dataset contains relatively short text messages and a modest number of labelled samples. This approach is lightweight, interpretable, and suitable for multi-class text classification without unnecessarily introducing a large neural model.
+**TF-IDF + Logistic Regression** was selected because the supplied dataset contains short text messages and a relatively small number of labelled examples.
+
+It provides a lightweight, understandable multi-class text classification solution without unnecessarily introducing a large neural model.
 
 ### Training and Evaluation
 
-- Labelled samples used: **426**
-- Number of categories: **8**
+- Labelled samples: **426**
+- Categories: **8**
 - Train/test split: **80/20**
-- Stratified sampling
-- Test accuracy: **89.53%**
+- Stratified split
+- Held-out test accuracy: **89.53%**
 
-After evaluation, the final model is trained using all labelled examples and saved using joblib.
+After evaluation, the final classifier is trained using all labelled examples and saved using `joblib`.
 
-### Confidence Handling
+### Low-Confidence Predictions
 
-The classifier returns both a predicted category and probability-based confidence.
+The classifier also returns a confidence value.
 
-A confidence threshold of:
+The current threshold is:
 
 ```text
 45%
 ```
 
-is used.
-
-Predictions below the threshold are safely categorized as `General Inquiry` and marked as low-confidence rather than presenting an uncertain specialized category as reliable.
-
-The original confidence score is retained.
-
-### Failure Handling
-
-AI classification is treated as an enhancement rather than a critical dependency.
-
-If the Python classifier fails, the order creation process continues normally without an AI classification.
-
----
-
-## Project Structure
+If confidence is below the threshold, the system stores the result as:
 
 ```text
-smart-order-allocation-system/
-|
-├── backend/
-|   ├── src/
-|   |   ├── controllers/
-|   |   ├── middleware/
-|   |   ├── models/
-|   |   ├── routes/
-|   |   └── services/
-|   ├── scripts/
-|   └── server.js
-|
-├── frontend/
-|   ├── src/
-|   |   ├── components/
-|   |   ├── context/
-|   |   ├── pages/
-|   |   └── services/
-|   └── package.json
-|
-├── ai-service/
-|   ├── dataset/
-|   ├── model/
-|   ├── classifier.py
-|   ├── train_model.py
-|   └── requirements.txt
-|
-└── README.md
+Category: General Inquiry
+Low Confidence: true
 ```
+
+The original confidence value is retained.
+
+This prevents an uncertain specialized prediction from being presented as reliable.
+
+If the classifier cannot run, order creation continues normally without AI classification.
 
 ---
 
-## Local Setup
+## Setup Instructions
 
 ### Prerequisites
 
@@ -358,98 +345,92 @@ Install:
 - Node.js
 - npm
 - Python 3
-- MongoDB Atlas account or compatible MongoDB instance
+- Access to MongoDB Atlas or another compatible MongoDB instance
 
-Clone the repository:
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/Sandani-Chamoda/smart-order-allocation-system.git
 cd smart-order-allocation-system
 ```
 
----
-
-## Backend Setup
-
-Navigate to:
+### 2. Backend
 
 ```bash
 cd backend
-```
-
-Install dependencies:
-
-```bash
 npm install
 ```
 
-Create a `.env` file using `.env.example` as a reference.
+Create:
 
-Configure the required MongoDB, JWT, and administrator environment variables.
+```text
+backend/.env
+```
 
-Start the backend:
+using `backend/.env.example` as the reference and configure the required values.
+
+Then start the backend:
 
 ```bash
 npm run dev
 ```
 
-The development API runs by default at:
+> On Windows PowerShell systems where script execution is restricted, `npm.cmd run dev` can be used instead.
+
+The local backend runs on:
 
 ```text
 http://localhost:5000
 ```
 
----
+### 3. AI Classifier
 
-## AI Service Setup
-
-Navigate to:
+From the project root:
 
 ```bash
 cd ai-service
 ```
 
-Install Python dependencies:
+Install the dependencies.
+
+Windows:
 
 ```bash
 py -m pip install -r requirements.txt
 ```
 
-Train the classifier if the saved model is not available:
+Other environments may use:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+The saved model can be regenerated using:
 
 ```bash
 py train_model.py
 ```
 
-Test the classifier:
+The classifier can be tested using:
 
 ```bash
 py classifier.py "I want to cancel my order and get a refund"
 ```
 
-On systems where Python is invoked using `python` or `python3` rather than `py`, the backend Python command can be configured through the environment.
+The backend Python command can be configured using the appropriate environment value when the operating system uses `python` or `python3` instead of the Windows `py` launcher.
 
----
-
-## Frontend Setup
-
-Navigate to:
+### 4. Frontend
 
 ```bash
 cd frontend
-```
-
-Install dependencies:
-
-```bash
 npm install
 ```
 
-Create the frontend environment configuration using `.env.example`.
+Create the frontend environment configuration using `frontend/.env.example`.
 
 For local development:
 
-```text
+```env
 VITE_API_URL=http://localhost:5000/api
 ```
 
@@ -459,7 +440,13 @@ Start the frontend:
 npm run dev
 ```
 
-Open the Vite development URL shown in the terminal.
+On PowerShell systems with script execution restrictions:
+
+```bash
+npm.cmd run dev
+```
+
+Open the Vite URL displayed in the terminal.
 
 ---
 
@@ -474,44 +461,45 @@ Open the Vite development URL shown in the terminal.
 
 Protected endpoints require a valid JWT.
 
-Administrative endpoints additionally require the `ADMIN` role.
+Administrator endpoints additionally require the `ADMIN` role.
 
 ---
 
-## Assumptions
+## Assumptions and Limitations
 
-- A branch must fulfill the complete order.
-- Orders are not split across branches.
-- Product prices are taken from the database, not trusted from frontend input.
-- The prototype uses predefined delivery locations and coordinates rather than a production geocoding/address service.
+### Assumptions
+
+- One branch must fulfill the complete order.
+- Orders are not split between branches.
+- Customer locations are selected from predefined locations in the current prototype.
+- Product prices stored in the database are authoritative.
 - Branch workload represents active allocated/processing work.
-- AI classification is optional and must not block core ordering functionality.
+- AI classification is an enhancement and should not block the core ordering process.
+
+### Current Limitations
+
+- The current prototype does not use MongoDB transactions for atomic stock reservation and order creation under high concurrency.
+- Delivery locations use predefined coordinates rather than a production geocoding/maps service.
+- Real payment processing is outside the scope of the prototype.
+- The AI classifier uses the supplied assessment dataset, so a larger real-world dataset would be required for production use.
+- AI classification is currently attached to the optional order-note workflow rather than a dedicated customer-support ticket system.
+- Additional automated testing and production infrastructure hardening would be required for a commercial deployment.
 
 ---
 
-## Current Limitations and Future Improvements
+## Project Structure
 
-This project is an assessment prototype rather than a production-ready commerce platform.
-
-Potential improvements include:
-
-- MongoDB transactions for atomic stock reservation and order creation under high concurrency
-- Atomic inventory operations for concurrent orders
-- Full address entry and geocoding/maps integration
-- Real payment processing
-- Dedicated customer support/ticket interface for AI message classification
-- Larger AI training dataset and model monitoring
-- Automated backend and frontend test suites
-- More advanced inventory forecasting
-- Notification services
-- Production-specific CORS and infrastructure configuration
-
-The current implementation prioritizes a complete, understandable solution with clear allocation logic, security controls, validation, and graceful failure handling.
+```text
+smart-order-allocation-system/
+├── backend/
+├── frontend/
+├── ai-service/
+└── README.md
+```
 
 ---
 
 ## Author
 
-**Sandani Chamoda**
-
+**Sandani Chamoda**  
 BSc (Hons) in Information Technology Undergraduate
